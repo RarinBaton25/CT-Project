@@ -31,23 +31,24 @@ def getAndUpdateColour():
         # Insert code here
         data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
 
-        
-
         # Convert the data to green, red and blue int values
         # Insert code here
         red = data[3] << 8 | data[2]
         green = data[1] << 8 | data[0]
         blue = data[5] << 8 | data[4]
 
+        red *= 2**(-8)
+        green *= 2**(-8)
+        blue *= 2**(-8)
+
         colors = [red, green, blue]
-        
+        time.sleep(1) 
         return colors
 
         # # Output data to the console RGB values
         # # Uncomment the line below when you have read the red, green and blue values
         # print("RGB(%d %d %d)" % (red, green, blue))
         
-        # time.sleep(2) 
 
 def closest_colour(requested_colour):
     distances = {}
@@ -68,6 +69,7 @@ def get_colour_name(requested_colour):
     return actual_name, closest_name
 
 while True:
-    actual_name, closest_name = get_colour_name(getAndUpdateColour())
+    colors = getAndUpdateColour()
+    actual_name, closest_name = get_colour_name(colors)
 
-    print("Actual colour name:", actual_name, ", closest colour name:", closest_name)
+    print("Actual colour name:", actual_name, ", closest colour name:", closest_name, " red:", colors[0], " green:", colors[1], " blue:", colors[2])
