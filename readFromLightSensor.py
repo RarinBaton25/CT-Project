@@ -8,7 +8,7 @@ bus = smbus.SMBus(1) # or smbus.SMBus(0)
 # Select configuation-1register, 0x01(01)
 # 0x0D(13) Operation: RGB, Range: 360 lux, Res: 16 Bits
 i2c_address = 0x44
-bus.write_byte_data(i2c_adress, 0x01, 0x05)
+bus.write_byte_data(i2c_address, 0x01, 0x05)
 
 time.sleep(1)
 
@@ -43,3 +43,5 @@ def getAndUpdateColour():
         print("RGB(%d %d %d)" % (red, green, blue))
         
         time.sleep(2) 
+
+getAndUpdateColour()
