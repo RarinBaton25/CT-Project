@@ -48,39 +48,8 @@ def getAndUpdateColour():
         # # Output data to the console RGB values
         # # Uncomment the line below when you have read the red, green and blue values
         # print("RGB(%d %d %d)" % (red, green, blue))
-        
-
-def closest_colour(requested_colour):
-    distances = {}
-    for name in webcolors.names():
-        r_c, g_c, b_c = webcolors.name_to_rgb(name)
-        rd = (r_c - requested_colour[0]) ** 2
-        gd = (g_c - requested_colour[1]) ** 2
-        bd = (b_c - requested_colour[2]) ** 2
-        distances[name] = rd + gd + bd
-    return min(distances, key=distances.get)
-
-def get_colour_name(requested_colour):
-    try:
-        closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
-    except ValueError:
-        closest_name = closest_colour(requested_colour)
-        actual_name = None
-    return actual_name, closest_name
 
 while True:
     colors = getAndUpdateColour()
-    red = colors[0]
-    green = colors[1]
-    blue = colors[2]
 
-    maxcolors = max(red, green, blue)
-    # Get percentage of each color
-    redn = red/maxcolors*255
-    greenn = green/maxcolors*255
-    bluen = blue/maxcolors*255
-    # Normalize
-    colors = [redn, bluen, greenn]
-    actual_name, closest_name = get_colour_name(colors)
-
-    print("Actual colour name:", actual_name, ", closest colour name:", closest_name, " red:", colors[0], " green:", colors[1], " blue:", colors[2])
+    print(f"red: {round(colors[0]):<5}", f"green: {round(colors[1]):< 5}", f"blue: {round(colors[2]):<5}")
