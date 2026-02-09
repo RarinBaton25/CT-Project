@@ -70,6 +70,13 @@ def get_colour_name(requested_colour):
 
 while True:
     colors = getAndUpdateColour()
+    maxcolors = max(colors[0], colors[1], colors[2])
+    # Get percentage of each color
+    redp = colors[0]/maxcolors
+    bluep = colors[1]/maxcolors
+    greenp = colors[1]/maxcolors
+    # Normalize
+    colors[redp*255, bluep*255, greenp*255]
     actual_name, closest_name = get_colour_name(colors)
 
     print("Actual colour name:", actual_name, ", closest colour name:", closest_name, " red:", colors[0], " green:", colors[1], " blue:", colors[2])
