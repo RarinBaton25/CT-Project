@@ -1,5 +1,6 @@
 import smbus
 import time
+import webcolors
 
 # Get I2C bus
 bus = smbus.SMBus(1) # or smbus.SMBus(0)
@@ -25,7 +26,7 @@ BLUE_H = 0x0E
 BLUE_L = 0x0D
 
 def getAndUpdateColour():
-    while True:
+    # while True:
 	# Read the data from the sensor
         # Insert code here
         data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
@@ -37,11 +38,36 @@ def getAndUpdateColour():
         red = data[3] << 8 | data[2]
         green = data[1] << 8 | data[0]
         blue = data[5] << 8 | data[4]
-        
-        # Output data to the console RGB values
-        # Uncomment the line below when you have read the red, green and blue values
-        print("RGB(%d %d %d)" % (red, green, blue))
-        
-        time.sleep(2) 
 
-getAndUpdateColour()
+        colors = [red, green, blue]
+        
+        return colors
+
+        # # Output data to the console RGB values
+        # # Uncomment the line below when you have read the red, green and blue values
+        # print("RGB(%d %d %d)" % (red, green, blue))
+        
+        # time.sleep(2) 
+
+def closest_colour(requested_colour):
+    distances = {}
+    for name in webcolors.names():
+        r_c, g_c, b_c = webcolors.name_to_rgb(name)
+        rd = (r_c - requested_colour[0]) ** 2
+        gd = (g_c - requested_colour[1]) ** 2
+        bd = (b_c - requested_colour[2]) ** 2
+        distances[name] = rd + gd + bd
+    return min(distances, key=distances.get)
+
+def get_colour_name(requested_colour):
+    try:
+        closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
+    except ValueError:
+        closest_name = closest_colour(requested_colour)
+        actual_name = None
+    return actual_name, closest_name
+
+while True:
+    actual_name, closest_name = get_colour_name(getAndUpdateColour())
+
+    print("Actual colour name:", actual_name, ", closest colour name:", closest_name)
