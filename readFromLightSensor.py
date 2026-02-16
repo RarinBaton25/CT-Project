@@ -68,25 +68,19 @@ def getDistance():
 def getAndUpdateColour():
     # while True:
 	# Read the data from the sensor
-        # Insert code here
-        data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
+    data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
 
-        # Convert the data to green, red and blue int values
-        # Insert code here
-        red = data[3] << 8 | data[2]
-        green = data[1] << 8 | data[0]
-        blue = data[5] << 8 | data[4]
+    # upshift 
+    red = data[3] << 8 | data[2]
+    green = data[1] << 8 | data[0]
+    blue = data[5] << 8 | data[4]
 
-        red *= 2**(-8)
-        green *= 2**(-8)
-        blue *= 2**(-8)
+    red *= 2**(-8)
+    green *= 2**(-8)
+    blue *= 2**(-8)
 
-        colors = [red, green, blue]
-        return colors
-
-        # # Output data to the console RGB values
-        # # Uncomment the line below when you have read the red, green and blue values
-        # print("RGB(%d %d %d)" % (red, green, blue))
+    colors = [red, green, blue]
+    return colors
 
 try:
     while True:
