@@ -86,13 +86,13 @@ def getAndUpdateColour():
 def updateLED(led:LED, distance):
     global LEDTime
     if distance > 140:
-        swaptime = 3*(10**9)
+        swaptime = 3*(10**9)   # 3 seconds
     elif distance > 50:
-        swaptime = 0.5*(10**9)
+        swaptime = 0.5*(10**9) # 0.5 second
     else:
-        led.on()
+        led.on()               # always on
         return
-  
+
     if time.time_ns()-LEDTime > swaptime:
         LEDTime = time.time_ns()
         if led.value == 1:
