@@ -1,6 +1,7 @@
 import smbus
 import time
 import RPi.GPIO as GPIO
+from gpiozero import LED
 
 # Use BCM GPIO references
 # instead of physical pin numbers
