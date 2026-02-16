@@ -1,6 +1,19 @@
 import smbus
 import time
-import webcolors
+import RPi.GPIO as GPIO
+
+# Use BCM GPIO references
+# instead of physical pin numbers
+GPIO.setmode(GPIO.BCM)
+
+# Define GPIO to use on Pi
+GPIO_TRIGECHO = 15
+
+# Set pins as output and input
+GPIO.setup(GPIO_TRIGECHO,GPIO.OUT)  # Initial state as output
+
+# Set trigger to False (Low)
+GPIO.output(GPIO_TRIGECHO, False)
 
 # Get I2C bus
 bus = smbus.SMBus(1) # or smbus.SMBus(0)
@@ -25,6 +38,32 @@ GREEN_L = 0x09
 BLUE_H = 0x0E
 BLUE_L = 0x0D
 
+def getDistance():
+      # This function measures a distance
+  # Pulse the trigger/echo line to initiate a measurement
+    GPIO.output(GPIO_TRIGECHO, True)
+    time.sleep(0.00001)
+    GPIO.output(GPIO_TRIGECHO, False)
+  #ensure start time is set in case of very quick return
+    start = time.time()
+
+  # set line to input to check for start of echo response
+    GPIO.setup(GPIO_TRIGECHO, GPIO.IN)
+    while GPIO.input(GPIO_TRIGECHO)==0:
+        start = time.time()
+
+  # Wait for end of echo response
+    while GPIO.input(GPIO_TRIGECHO)==1:
+        stop = time.time()
+  
+    GPIO.setup(GPIO_TRIGECHO, GPIO.OUT)
+    GPIO.output(GPIO_TRIGECHO, False)
+
+    elapsed = stop-start
+    distance = (elapsed * 34300)/2.0
+    # time.sleep(0.1)
+    return distance
+
 def getAndUpdateColour():
     # while True:
 	# Read the data from the sensor
@@ -42,14 +81,21 @@ def getAndUpdateColour():
         blue *= 2**(-8)
 
         colors = [red, green, blue]
-        time.sleep(1) 
         return colors
 
         # # Output data to the console RGB values
         # # Uncomment the line below when you have read the red, green and blue values
         # print("RGB(%d %d %d)" % (red, green, blue))
 
-while True:
-    colors = getAndUpdateColour()
+try:
+    while True:
+        colors = getAndUpdateColour()
 
-    print(f"red: {round(colors[0]):<5}", f"green: {round(colors[1]):< 5}", f"blue: {round(colors[2]):<5}")
+        print(f"red: {round(colors[0]):<5}", f"green: {round(colors[1]):< 5}", f"blue: {round(colors[2]):<5}\n")
+        distance = getDistance()
+        print("Distance : %.1f cm" % distance)
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("Stop")
+    GPIO.cleanup()
