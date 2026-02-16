@@ -1,6 +1,7 @@
 import smbus
 import time
 import RPi.GPIO as GPIO
+from gpiozero import LED
 
 # Use BCM GPIO references
 # instead of physical pin numbers
@@ -81,14 +82,35 @@ def getAndUpdateColour():
     colors = [red, green, blue]
     return colors
 
+#distance in cm
+def updateLED(led:LED, distance):
+    global LEDTime
+    if distance > 140:
+        swaptime = 3*(10**9)
+    elif distance > 50:
+        swaptime = 0.5*(10**9)
+    else:
+        led.on()
+        return
+  
+    if time.time_ns()-LEDTime > swaptime:
+        LEDTime = time.time_ns()
+        if led.value == 1:
+            led.off()
+        else:
+            led.on()
+
 try:
+    led = LED(17)
+    LEDTime = time.time_ns()
     while True:
         colors = getAndUpdateColour()
 
         print(f"red: {round(colors[0]):<5}", f"green: {round(colors[1]):< 5}", f"blue: {round(colors[2]):<5}\n")
         distance = getDistance()
         print("Distance : %.1f cm" % distance)
-        time.sleep(1)
+        updateLED(led, distance)
+        time.sleep(0.5)
 
 except KeyboardInterrupt:
     print("Stop")
