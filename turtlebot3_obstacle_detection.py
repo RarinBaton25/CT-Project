@@ -40,7 +40,7 @@ class Turtlebot3ObstacleDetection(Node):
         self.stop_distance = 0.5
         self.tele_twist = Twist()
         self.tele_twist.linear.x = 0.2
-        self.tele_twist.angular.z = 0.0
+        self.tele_twist.angular.z = 0.5
 
         qos = QoSProfile(depth=10)
 
@@ -74,6 +74,7 @@ class Turtlebot3ObstacleDetection(Node):
 
     def detect_obstacle(self):
 
+        # Scan ranges
         f_range = self.scan_ranges[0:30] + self.scan_ranges[-30:]
         fleft_range = self.scan_ranges[30:90]
         fright_range = self.scan_ranges[-90:-30]
@@ -81,17 +82,35 @@ class Turtlebot3ObstacleDetection(Node):
         bright_range = self.scan_ranges[90:150]
         bleft_range = self.scan_ranges[-150:-90]
         
-        ranges = [f_range, fleft_range, bleft_range, b_range, bright_range, fright_range] 
+        ranges = [f_range, fleft_range, fright_range, b_range, bleft_range, bright_range] 
 
-        obstacle_distance = min([min(i) for i in ranges])
+        front_dist = min(ranges[0:3])
+        back_dist = min(ranges[3:])
 
         twist = Twist()
-        if obstacle_distance < self.stop_distance:
-            twist.linear.x = 0.0
-            twist.angular.z = self.tele_twist.angular.z
-            self.get_logger().info('Obstacle detected! Stopping.', throttle_duration_sec=2)
-        else:
-            twist = self.tele_twist
+        # if obstacle_distance < self.stop_distance:
+        #     twist.linear.x = 0.0
+        #     twist.angular.z = self.tele_twist.angular.z
+        #     self.get_logger().info('Obstacle detected! Stopping.', throttle_duration_sec=2)
+        # else:
+        #     twist = self.tele_twist
+
+        def turn(self, x, dir):
+            if dir == "left":
+                return x*self.tele_twist, self.tele_twist.angular.z
+            elif dir == "right":
+                return x*self.tele_twist, self.tele_twist.angular.z
+            else:
+                return x*self.tele_twist, 0
+
+        if front_dist < back_dist: # Turn forward
+            if fleft_range > fright_range:
+                twist.linear.x, twist.angular.z = turn_dir(1, "left")
+            else:
+                twist.angular.z = turn_dir(1, "right")
+        elif front_dist > back_dist: # Turn backwards
+            turn(1, 0)
+            
 
         self.cmd_vel_pub.publish(twist)
 
