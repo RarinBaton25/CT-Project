@@ -198,7 +198,6 @@ class Navigation:
         self.w = 0
         # Tuning constant
         self.k = .5
-    
     def angular_velocity(self, theta):
         if(abs(theta) < 0.15):
           self.w = 0.
