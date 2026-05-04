@@ -23,19 +23,80 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.qos import QoSProfile
 from sensor_msgs.msg import LaserScan
+# Led Import
+import smbus
+import time
+import RPi.GPIO as GPIO
+from gpiozero import LED
+
+# ---------------------------------------------------
+#               LED boilerplate
+# ---------------------------------------------------
+
+# Use BCM GPIO references
+# instead of physical pin numbers
+GPIO.setmode(GPIO.BCM)
+
+# Define GPIO to use on Pi
+GPIO_TRIGECHO = 15
+
+# Set pins as output and input
+GPIO.setup(GPIO_TRIGECHO,GPIO.OUT)  # Initial state as output
+
+# Set trigger to False (Low)
+GPIO.output(GPIO_TRIGECHO, False)
+
+# Get I2C bus
+bus = smbus.SMBus(1) # or smbus.SMBus(0)
+
+# ISL29125 address, 0x44(68)
+# Select configuation-1register, 0x01(01)
+# 0x0D(13) Operation: RGB, Range: 360 lux, Res: 16 Bits
+i2c_address = 0x44
+bus.write_byte_data(i2c_address, 0x01, 0x05)
+
+RED_H = 0x0C
+RED_L = 0x0B
+
+GREEN_H = 0x0A
+GREEN_L = 0x09
+
+BLUE_H = 0x0E
+BLUE_L = 0x0D
+
+def getAndUpdateColour():
+    # while True:
+	# Read the data from the sensor
+    data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
+
+    # upshift 
+    red = data[3] << 8 | data[2]
+    green = data[1] << 8 | data[0]
+    blue = data[5] << 8 | data[4]
+
+    red *= 2**(-8)
+    green *= 2**(-8)
+    blue *= 2**(-8)
+
+    colors = [red, green, blue]
+    return colors
+
+
+
+
 
 class Ranges:
     # Constants for scan cleanup
     LOWER_DIST = 0
     UPPER_DIST = 3.5
-    STOP_DIST = 0.20
+    STOP_DIST = 0.25
     COLLIS_THRESHOLD = 0.15
     
     def __init__(self):
         self.angles = np.array([])
         self.dists = np.array([])
         self.stop = False
-        self.prevtheta = 0
+        self.prevtheta = 0.
         # Pairs contain [angle, dist]
         self.pairs = np.empty((0, 2))
         self.front = np.empty((0, 2))
@@ -45,6 +106,13 @@ class Ranges:
 
         self.collis = 0
         self.in_collis = False
+
+        self.on_red_count = 0
+        self.on_red_flag = False
+        self.on_red_cooldown = 0
+        self.led = LED(17)
+        self.led.off()
+        
         
 
     # def debug_print(self):
@@ -76,7 +144,7 @@ class Ranges:
         Empty cells are: .
         """
         if len(self.pairs) == 0:
-            print("No scan data")
+            # print("No scan data")
             return
 
         grid = np.full((size, size), '.', dtype='<U1')
@@ -135,7 +203,9 @@ class Ranges:
     def steer_dir(self):
         prev_weight = 0.8
         new_weight = 0.2
-        theta = prev_weight*self.prevtheta + new_weight*self.max_theta()
+        best_angle = self.wrap_theta(self.max_theta())
+
+        theta = prev_weight*self.prevtheta + new_weight*best_angle
         theta = self.wrap_theta(theta)
         # Store prev value
         self.prevtheta = theta
@@ -177,7 +247,10 @@ class Ranges:
         if np.min(self.front[:, 1]) < self.STOP_DIST:
             self.stop = True 
         else:
+            if self.stop:
+                self.prevtheta = 0.
             self.stop = False
+            #markør
 
         # Collisions count
         _, min_d = self.min_dist()
@@ -188,28 +261,48 @@ class Ranges:
         else:
             self.in_collis = False
 
+        colors = getAndUpdateColour()
+
+        if colors[0]/colors[1] >= 1.15:
+            if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
+                self.on_red_count += 1
+                self.on_red_flag = True
+                self.on_red_cooldown = time.time()
+                self.led.on()
+        else:
+            self.on_red_flag = False
+            self.led.off()
+        # print("The colors count is:", self.on_red_count, "\n On red:", self.on_red_flag, "\n")
+        # print(colors)
+        # print(self.led.value)
+
         
 
 class Navigation:
     def __init__(self):
         self.v_max = 0.4
-        self.w_max = 0.67
-        self.v = 0
-        self.w = 0
+        self.ang_velocity_max = 0.67
+        self.v = 0.
+        self.ang_velocity = 0.
         # Tuning constant
         self.k = .5
-    def angular_velocity(self, theta):
+    def angular_velocity(self, theta, stop):
+        if stop:
+            # self.ang_velocity += 0.2
+            self.ang_velocity = max(-self.ang_velocity_max, min(self.ang_velocity, self.ang_velocity_max))
+            return self.ang_velocity
+
         if(abs(theta) < 0.15):
-          self.w = 0.
+          self.ang_velocity = 0.
         else: 
-            self.w = self.k*theta
-        # We clamp the angular velocity since the angle can grow large
-        self.w = max(-self.w_max, min(self.w, self.w_max))
-        return self.w
+            # We clamp the angular velocity since the angle can grow large
+            self.ang_velocity = self.k*theta
+            self.ang_velocity = max(-self.ang_velocity_max, min(self.ang_velocity, self.ang_velocity_max))
+        return self.ang_velocity
 
     def velocity(self):
         # v needs to stay in proportion to 1/w
-        self.v = self.v_max / (1 + abs(self.w))
+        self.v = self.v_max / (1 + abs(self.ang_velocity))
         return self.v
 
 
@@ -217,11 +310,11 @@ class Turtlebot3ObstacleDetection(Node):
 
     def __init__(self):
         super().__init__('turtlebot3_obstacle_detection')
-        print('TurtleBot3 Obstacle Detection - Auto Move Enabled')
-        print('----------------------------------------------')
-        print('stop angle: -90 ~ 90 deg')
-        print('stop distance: 0.5 m')
-        print('----------------------------------------------')
+        # print('TurtleBot3 Obstacle Detection - Auto Move Enabled')
+        # print('----------------------------------------------')
+        # print('stop angle: -90 ~ 90 deg')
+        # print('stop distance: 0.5 m')
+        # print('----------------------------------------------')
 
         self.scan_ranges = Ranges()
         self.has_scan_received = False
@@ -231,6 +324,7 @@ class Turtlebot3ObstacleDetection(Node):
         self.tele_twist = Twist()
         self.tele_twist.linear.x = 0.2
         self.tele_twist.angular.z = 0.0
+        self.velocities = []
 
         self.debug_counter = 0
 
@@ -273,17 +367,22 @@ class Turtlebot3ObstacleDetection(Node):
         if self.debug_counter % 10 == 0:
             self.scan_ranges.ascii_map()
 
+        move_stop = self.scan_ranges.stop
         theta = self.scan_ranges.steer_dir()
-        self.tele_twist.angular.z = self.nav.angular_velocity(theta)
+        self.tele_twist.angular.z = self.nav.angular_velocity(theta, move_stop)
 
-        if self.scan_ranges.stop:
+        if move_stop:
             self.tele_twist.linear.x = 0.
-            self.tele_twist.angular.z += np.sign(theta)*0.67
+            # self.tele_twist.angular.z += np.sign(theta)*0.67
         else:
             self.tele_twist.linear.x = self.nav.velocity()
+        self.velocities = self.velocities + [self.tele_twist.linear.x]
+        avg_velocity = np.mean(self.velocities)
+        print(f"theta={theta:.2f}, v={self.tele_twist.linear.x:.2f}, w={self.tele_twist.angular.z:.2f}, \
+              collisions={self.scan_ranges.collis:.2f}, avg velocity = {avg_velocity:.2f} ")
 
-        print(f"theta={theta:.2f}, v={self.tele_twist.linear.x:.2f}, w={self.tele_twist.angular.z:.2f}, collisions={self.scan_ranges.collis:.2f}")
-
+        # self.tele_twist.linear.x = 0.
+        # self.tele_twist.angular.z = 0.
         self.cmd_vel_pub.publish(self.tele_twist)
        
 
