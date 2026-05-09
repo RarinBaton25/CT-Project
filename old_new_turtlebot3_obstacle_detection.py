@@ -11,6 +11,7 @@ import numpy as np
 class RangeMeasurement:
     MINIMUM_MEASURABLE_DISTANCE = 0.  # values below this are definitely faulty
     MAXIMUM_MEASURABLE_DISTANCE = 3.5 # values above this are assumed to be faulty
+    RADIAN_TO_DEGREE            = 180 / np.pi
 
     def __init__(self, measured_angle:float, measured_distance: float):
         self.clamped  = False
@@ -27,6 +28,9 @@ class RangeMeasurement:
         else:
             self.distance = self.measured_distance
 
+    def __repr__(self):
+        return f"Angle: {self.get_angle()} Distance: {self.get_distance()}"
+
     def is_valid(self) -> bool:
         """If a distance was negative, it's flagged as invalid
         """
@@ -40,7 +44,7 @@ class RangeMeasurement:
     def get_angle(self) -> float:
         """Returns a range measurement's angle.
         """
-        return self.angle
+        return self.angle * self.RADIAN_TO_DEGREE
 
     def get_unclamped_distance(self) -> float:
         """Returns a range measurement's distance value from before it was clamped.
@@ -113,7 +117,7 @@ class Turtlebot3ObstacleDetection(Node):
         self.MAX_LINEAR_VELOCITY    = 0.4
         self.MAX_ANGULAR_VELOCITY   = 0.67
         self.STOP_DISTANCE          = 0.15 # Nothing should get closer to the robot than this distance
-        self.IGNORING_DISTANCE      = 2.0  # distance at which we don't care whether 
+        self.IGNORING_DISTANCE      = 2.0  # distance at which we don't care if something is in the way
 
         qos = QoSProfile(depth=10)
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
@@ -141,35 +145,90 @@ class Turtlebot3ObstacleDetection(Node):
 
     def timer_callback(self):
         if self.ranges_have_been_measured:
+            print("Entering mainloop()")
             self.mainloop()
+
+    def direction_of_most_open_direction(self):
+        angles_of_open_direction:list[list] = []
+        angles = []
+        for measurement in self.ranges.get_all_range_measurements():
+            if measurement.get_distance() > self.STOP_DISTANCE:
+                angles.append(measurement.get_angle())
+            else:
+                if len(angles) > 0:
+                    angles_of_open_direction.append(angles)
+                angles = []
+        
+        angles_of_open_direction.sort(key=lambda x : len(x), reverse=True)
+        
+        if len(angles_of_open_direction) > 0:
+            return self.average(angles_of_open_direction[0])
+        else:
+            return 0
+        
+    def average(self, list):
+        sum = 0
+        for element in list:
+            sum += element
+        if len(list) > 0:
+            return sum / len(list)
+        else:
+            return 0
+
+    def clockwise_or_anticlockwise(self, angle1, angle2):
+        clockwise_difference        = max(angle1, angle2) - min(angle1, angle2)
+        anticlockwise_difference    = max(angle1, angle2)-360 - min(angle1, angle2)
+
+        if clockwise_difference >= anticlockwise_difference:
+            return 1
+        else:
+            return -1
 
     ######### MAIN #########
     def mainloop(self):
-        if self.should_stop():
-            self.next_tele_twist.linear.x = 0.
-            # turn away from wall
-        else:
-            self.next_tele_twist.linear.x = self.MAX_LINEAR_VELOCITY
-        
+        # if self.should_stop():
+        #     print("Should stop")
+        #     self.next_tele_twist.linear.x = 0.
+        #     self.turn_away_from_wall()
+        # else:
+        #     print("Forward!")
+        self.next_tele_twist.linear.x  = self.MAX_LINEAR_VELOCITY
+        self.next_tele_twist.angular.z = 0.
+
         self.cmd_vel_pub.publish(self.next_tele_twist)
 
     ######### STOP LOGIC #########
-    def front_is_clear(self):
+    def channel_in_front_is_clear(self):
         front_slice_distance_measurements = self.ranges.get_range_measurements_slice(-89, 90) # front hemisphere
+        print(front_slice_distance_measurements)
 
-        # 1/sin(angle) * stop_distance creates a channel that's stop_distance wide. For any angle, it symbolizes the distance from the robot to the walls of that channel. If the measured walls are within that channel
+        # 1/sin(angle) * stop_distance creates a channel that's stop_distance wide. For any angle, it symbolizes the distance from the robot to the walls of that channel in a particular direction.
         for measurement in front_slice_distance_measurements:
             if not np.isclose(measurement.get_angle(), 0) and measurement.is_valid():
                 distance_to_wall_in_straight_channel = 1/np.sin(measurement.get_angle())*self.STOP_DISTANCE
+                print(distance_to_wall_in_straight_channel, end=" ")
                 if measurement.get_distance() < min(distance_to_wall_in_straight_channel, self.IGNORING_DISTANCE):
+                    print("\n")
                     return False
+        print("\n")
         return True
+    
+    def anything_in_front_within_stop_distance(self):
+        front_slice_distance_measurements = self.ranges.get_range_measurements_slice(-89, 90) # front hemisphere
+
+        if any([measurement.get_distance() < self.STOP_DISTANCE for measurement in front_slice_distance_measurements if measurement.is_valid()]):
+            return True
+        else:
+            return False
 
     def should_stop(self):
-        if self.front_is_clear():
-            return False
-        else:
-            return True
+        return self.anything_in_front_within_stop_distance()
+        # return self.channel_in_front_is_clear()
+    
+    def turn_away_from_wall(self):
+        goal_angle = self.direction_of_most_open_direction()
+        print("Turning to", goal_angle)
+        self.next_tele_twist.angular.z = self.MAX_ANGULAR_VELOCITY * self.clockwise_or_anticlockwise(0, goal_angle)
 
 def main(args=None):
     try:
