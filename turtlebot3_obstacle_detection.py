@@ -85,6 +85,8 @@ WALL_DISTANCE = 0.2
 CHANNEL_IGNORE_DISTANCE = 0.5
 MAX_LINEAR_SPEED = 0.21
 MAX_ANGULAR_SPEED = 1.7
+RATIO_POWER = 2
+
 
 # together, these make the front hemisphere
 DEG_90  = np.multiply(0.5, np.pi)
@@ -148,6 +150,8 @@ class Turtlebot3ObstacleDetection(Node):
             print("Ratio is out of bounds:", ratio)
             ratio = 1.
 
+        ratio = ratio**RATIO_POWER
+
         self.tele_twist.linear.x  = (1. - ratio)*MAX_LINEAR_SPEED
         print("Setting linear.x =", self.tele_twist.linear.x)
 
@@ -180,14 +184,15 @@ class Turtlebot3ObstacleDetection(Node):
                         self.closest_obstacle_in_path = data
 
     def avoid_obstacle(self):
-        turn_ratio = (self.closest_obstacle_in_path.get_distance() - STOP_DISTANCE)/(CHANNEL_IGNORE_DISTANCE - STOP_DISTANCE)
+        d = self.closest_obstacle_in_path.get_distance()
+        turn_ratio = np.add(np.multiply(np.divide(1, STOP_DISTANCE - CHANNEL_IGNORE_DISTANCE), np.subtract(d, STOP_DISTANCE)), 1) # lerp
         print("Turn ratio:", turn_ratio)
         if self.closest_obstacle_in_path.get_angle() < DEG_90:
             # obstacle is to the left
-            self.set_angular_speed_vs_linear_speed(0.2, TURN_RIGHT)
+            self.set_angular_speed_vs_linear_speed(turn_ratio, TURN_RIGHT)
         elif self.closest_obstacle_in_path.get_angle() > DEG_270:
             # obstacle is to the right
-            self.set_angular_speed_vs_linear_speed(0.2, TURN_LEFT)
+            self.set_angular_speed_vs_linear_speed(turn_ratio, TURN_LEFT)
         else:
             print("Weirdness.")
 
