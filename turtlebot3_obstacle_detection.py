@@ -85,8 +85,7 @@ WALL_DISTANCE = 0.2
 CHANNEL_IGNORE_DISTANCE = 0.5
 MAX_LINEAR_SPEED = 0.21
 MAX_ANGULAR_SPEED = 1.7
-RATIO_POWER = 2
-
+RATIO_POWER = 1.4
 
 # together, these make the front hemisphere
 DEG_90  = np.multiply(0.5, np.pi)
@@ -219,18 +218,17 @@ class Turtlebot3ObstacleDetection(Node):
 
 
 def main(args=None):
+    rclpy.init(args=args)
+    turtlebot3_obstacle_detection = Turtlebot3ObstacleDetection()
     try:
-        rclpy.init(args=args)
-        turtlebot3_obstacle_detection = Turtlebot3ObstacleDetection()
-        rclpy.spin(turtlebot3_obstacle_detection)
-    
+        rclpy.spin(node)
+           
     except KeyboardInterrupt:
         print("Stopping navigation.")
         turtlebot3_obstacle_detection.tele_twist.linear.x = 0.0
         turtlebot3_obstacle_detection.tele_twist.angular.z = 0.0
-        turtlebot3_obstacle_detection.cmd_vel_pub(turtlebot3_obstacle_detection.tele_twist)
-        raise
-
+        turtlebot3_obstacle_detection.cmd_vel_pub.publish(turtlebot3_obstacle_detection.tele_twist)
+        time.sleep(0.1)
     finally:
         turtlebot3_obstacle_detection.destroy_node()
         rclpy.shutdown()
