@@ -130,9 +130,10 @@ class Turtlebot3ObstacleDetection(Node):
         print("Setting angular.z =", self.tele_twist.angular.z)
 
     def distance_to_channel_wall(self, angle):
-        if angle == 0.:
-            return 100 #something big
-        return np.multiply(np.abs(1/np.sin(angle)), WALL_DISTANCE)
+        try:
+            return np.multiply(np.abs(np.divide(1, np.sin(angle))), WALL_DISTANCE)
+        except:
+            return 100
 
     def obstacle_ahead(self):
         # together, these make the fron hemisphere
