@@ -52,8 +52,8 @@ class LaserData:
 class LaserReading:
     def __init__(self):
         self.scan_readings = []
-        self.front_semicircle = []
-        self.front_cone = []
+        self.front_semicircle:list[LaserData] = []
+        self.front_cone:list[LaserData] = []
 
     def update_readings(self, msg):
         self.scan_readings = [LaserData(data_index*msg.angle_increment + msg.angle_min, distance) \
@@ -172,8 +172,8 @@ class Turtlebot3ObstacleDetection(Node):
         """
         # print( [[data.get_angle(), f"{data.get_distance()} < {self.distance_to_channel_wall(data.get_angle())} < 3.5"] for data in self.scan_ranges if data.get_distance() < self.distance_to_channel_wall(data.get_angle()) < 3.5] )
         self.closest_obstacle_in_path = None
-        for data in self.scan_ranges:
-            if data.get_angle() < DEG_90 or data.get_angle() > DEG_270: #limit search to obstacles in front
+        for data in self.scan_ranges.front_semicircle:
+             #limit search to obstacles in front
                 if data.get_distance() < self.distance_to_channel_wall(data.get_angle()) < CHANNEL_IGNORE_DISTANCE: # is there an obstacle in our path?
                     if self.closest_obstacle_in_path == None or data.get_distance() < self.closest_obstacle_in_path.get_distance():
                         # update newest closest obstacle
@@ -184,10 +184,12 @@ class Turtlebot3ObstacleDetection(Node):
         print("Turn ratio:", turn_ratio)
         if self.closest_obstacle_in_path.get_angle() < DEG_90:
             # obstacle is to the left
-            self.set_angular_speed_vs_linear_speed(turn_ratio, TURN_RIGHT)
+            self.set_angular_speed_vs_linear_speed(0.2, TURN_RIGHT)
         elif self.closest_obstacle_in_path.get_angle() > DEG_270:
             # obstacle is to the right
-            self.set_angular_speed_vs_linear_speed(turn_ratio, TURN_LEFT)
+            self.set_angular_speed_vs_linear_speed(0.2, TURN_LEFT)
+        else:
+            print("Weirdness.")
 
     def update(self):
         if self.has_scan_received:
