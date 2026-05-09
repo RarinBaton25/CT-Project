@@ -49,6 +49,35 @@ class LaserData:
     def get_distance(self):
         return self.distance
 
+class LaserReading:
+    def __init__(self):
+        self.scan_readings = []
+        self.front_semicircle = []
+        self.front_cone = []
+
+    def update_readings(self, msg):
+        self.scan_readings = [LaserData(data_index*msg.angle_increment + msg.angle_min, distance) \
+                            for data_index, distance in enumerate(msg.ranges)]
+        # Offsets
+        len_readings = len(self.scan_readings)
+        front_offset = len_readings // 4
+        front_offset_cone = (len_readings*3) // 40
+        front_semi_first = []
+        front_semi_second = []
+        front_cone_first = []
+        front_cone_second = []
+
+        for i in range(max(front_offset, front_offset_cone)):
+            if i < front_offset:
+                front_semi_first.append(self.scan_readings[i])
+                front_semi_second.append(self.scan_readings[3*front_offset + i - 1])
+            if i < front_offset_cone:
+                front_cone_first.append(self.scan_readings[i])
+                front_cone_second.append(self.scan_readings[len_readings - front_offset_cone + i - 1])
+
+        self.front_semicircle = front_semi_first + front_semi_second
+        self.front_cone = front_cone_first + front_cone_second
+
 TURN_RIGHT = 1
 TURN_LEFT  = 2
 STOP_DISTANCE = 0.23
@@ -64,7 +93,7 @@ class Turtlebot3ObstacleDetection(Node):
 
         self.turn_ratio = 0.
 
-        self.scan_ranges = []
+        self.scan_ranges = LaserReading()
         self.has_scan_received = False
 
         self.tele_twist = Twist()
@@ -96,7 +125,7 @@ class Turtlebot3ObstacleDetection(Node):
 
     # Writes data from scan
     def scan_callback(self, msg):
-        self.scan_ranges = [LaserData(data_index*msg.angle_increment + msg.angle_min, distance) for data_index, distance in enumerate(msg.ranges)]
+        self.scan_ranges.update_readings(msg)
         self.has_scan_received = True
 
     def cmd_vel_raw_callback(self, msg):
@@ -106,11 +135,12 @@ class Turtlebot3ObstacleDetection(Node):
         self.update()
 
     def should_stop(self):
-        return any(datapoint.get_distance() < STOP_DISTANCE for datapoint in self.scan_ranges if datapoint.get_angle() < np.pi*0.15 or datapoint.get_angle() > np.pi*(2-0.15))
-
+        for data in self.scan_ranges.front_cone:
+            if data.get_distance() < STOP_DISTANCE:
+                return True
+        return False
     def set_angular_speed_vs_linear_speed(self, ratio:float, turn_direction=TURN_LEFT):
         
-
         print("Ratio =", ratio)
         if not 0. <= ratio <= 1.:
             print("Ratio is out of bounds:", ratio)
@@ -136,25 +166,22 @@ class Turtlebot3ObstacleDetection(Node):
             return 100
 
     def obstacle_ahead(self):
-        # together, these make the fron hemisphere
-        deg_90  = np.multiply(0.5, np.pi)
-        deg_270 = np.multiply(1.5, np.pi)
         # print( [[data.get_angle(), f"{data.get_distance()} < {self.distance_to_channel_wall(data.get_angle())} < 3.5"] for data in self.scan_ranges if data.get_distance() < self.distance_to_channel_wall(data.get_angle()) < 3.5] )
-        for data in self.scan_ranges:
-            if data.get_angle() < deg_90 or data.get_angle() > deg_270:
-                if data.get_distance() < self.distance_to_channel_wall(data.get_angle()) < CHANNEL_IGNORE_DISTANCE:
+        for data in self.scan_ranges.front_semicircle:
+            if data.get_distance() < self.distance_to_channel_wall(data.get_angle()) < CHANNEL_IGNORE_DISTANCE:
                     return True
         return False
 
     def update(self):
         if self.has_scan_received:
+            print([item.get_angle() for item in self.scan_ranges.front_cone])
             
-            if self.obstacle_ahead():
+            # if self.obstacle_ahead():
                 # print("Found something!")
-                self.led.on()
-            else:
+                # self.led.on()
+            # else:
                 # print("Nothing ahead.")
-                self.led.off()
+                # self.led.off()
             # if self.should_stop():
             #     self.led.on()
             #     print("Stopping.")
