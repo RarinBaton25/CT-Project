@@ -221,8 +221,8 @@ def main(args=None):
     rclpy.init(args=args)
     turtlebot3_obstacle_detection = Turtlebot3ObstacleDetection()
     try:
-        rclpy.spin(node)
-           
+        rclpy.spin(turtlebot3_obstacle_detection)
+
     except KeyboardInterrupt:
         print("Stopping navigation.")
         turtlebot3_obstacle_detection.tele_twist.linear.x = 0.0
