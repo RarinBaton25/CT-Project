@@ -47,13 +47,13 @@ GPIO.setup(GPIO_TRIGECHO,GPIO.OUT)  # Initial state as output
 GPIO.output(GPIO_TRIGECHO, False)
 
 # Get I2C bus
-bus = smbus.SMBus(1) # or smbus.SMBus(0)
+# bus = smbus.SMBus(1) # or smbus.SMBus(0)
 
 # ISL29125 address, 0x44(68)
 # Select configuation-1register, 0x01(01)
 # 0x0D(13) Operation: RGB, Range: 360 lux, Res: 16 Bits
-i2c_address = 0x44
-bus.write_byte_data(i2c_address, 0x01, 0x05)
+# i2c_address = 0x44
+# bus.write_byte_data(i2c_address, 0x01, 0x05)
 
 RED_H = 0x0C
 RED_L = 0x0B
@@ -81,10 +81,6 @@ def getAndUpdateColour():
     colors = [red, green, blue]
     return colors
 
-
-
-
-
 class Ranges:
     # Constants for scan cleanup
     LOWER_DIST = 0
@@ -96,7 +92,7 @@ class Ranges:
         self.angles = np.array([])
         self.dists = np.array([])
         self.stop = False
-        self.prevtheta = 0.
+        
         # Pairs contain [angle, dist]
         self.pairs = np.empty((0, 2))
         self.front = np.empty((0, 2))
@@ -182,44 +178,58 @@ class Ranges:
         ("left",  self.left,  np.mean(self.left[:, 1])),
         # ("back",  self.back,  np.mean(self.back[:, 1])),
         ("right", self.right, np.mean(self.right[:, 1]))
-    ]
+        ]
         name, slc, avg_dist = max(candidates, key=lambda x: x[2])
         return name, slc, avg_dist
     
     # Angle for obj furthest away
-    def max_theta(self):
+    def furthest_obj_ang(self):
         name, slc, avg_dist = self.max_avg()
-        # Largest val in slc
-        # idx = slc[:, 1].argmax()
-        # theta = slc[idx, 0]
-        # return theta
 
         # We pick the angle in the middle for smoother turning
         return np.mean(slc[:, 0])
         
-        
-
-    # Direction to steer in using prev angle for smoother steering
-    def steer_dir(self):
-        prev_weight = 0.8
-        new_weight = 0.2
-        best_angle = self.wrap_theta(self.max_theta())
-
-        theta = prev_weight*self.prevtheta + new_weight*best_angle
-        theta = self.wrap_theta(theta)
-        # Store prev value
-        self.prevtheta = theta
-        return theta
-    
-    def wrap_theta(self, theta):
-        return (theta + np.pi) % (2*np.pi) - np.pi
-
+    def avg_dists_slices(self):
+        avg_dists_slcs = {"front": np.mean(self.front[:, 1]), 
+                          "left": np.mean(self.left[:, 1]), 
+                          "right" : np.mean(self.right[:, 1])}
+        # ("back",  self.back,  np.mean(self.back[:, 1])) 
+        return avg_dists_slcs
 
     # Returns min dist and its angle
     def min_dist(self):
         idx = self.dists.argmin()
         return self.angles[idx], self.dists[idx]
     
+    def emergency_stop(self):
+        if np.min(self.front[:, 1]) < self.STOP_DIST:
+            self.stop = True 
+        else:
+            if self.stop:
+                self.prevtheta = 0.
+            self.stop = False
+
+    def count_collis(self):
+        _, min_d = self.min_dist()
+        if min_d < self.COLLIS_THRESHOLD:
+            if not self.in_collis:
+                self.collis += 1
+                self.in_collis = True
+        else:
+            self.in_collis = False
+
+    def toggle_led(self, colors):
+        if colors[0]/colors[1] >= 1.15:
+            if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
+                self.on_red_count += 1
+                self.on_red_flag = True
+                self.on_red_cooldown = time.time()
+                self.led.on()
+        else:
+            self.on_red_flag = False
+            self.led.off()
+
+
     def slices(self):
         # Offsets
         n = len(self.pairs)
@@ -239,39 +249,20 @@ class Ranges:
                              else self.UPPER_DIST for r in msg.ranges])
         # Array of the angles from ranges
         self.angles = msg.angle_min + np.arange(len(msg.ranges)) * msg.angle_increment
-        # Pairs data
+        # Pairs of data
         self.pairs = np.column_stack((self.angles, self.dists))
         # Update slices
         self.slices()
         # If front dist min is less then STOP_DIST stop
-        if np.min(self.front[:, 1]) < self.STOP_DIST:
-            self.stop = True 
-        else:
-            if self.stop:
-                self.prevtheta = 0.
-            self.stop = False
-            #markør
+        self.emergency_stop()
 
         # Collisions count
-        _, min_d = self.min_dist()
-        if min_d < self.COLLIS_THRESHOLD:
-            if not self.in_collis:
-                self.collis += 1
-                self.in_collis = True
-        else:
-            self.in_collis = False
+        self.count_collis()
 
-        colors = getAndUpdateColour()
+        # Led Logic
+        # colors = getAndUpdateColour()
+        # self.toggle_led(colors)
 
-        if colors[0]/colors[1] >= 1.15:
-            if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
-                self.on_red_count += 1
-                self.on_red_flag = True
-                self.on_red_cooldown = time.time()
-                self.led.on()
-        else:
-            self.on_red_flag = False
-            self.led.off()
         # print("The colors count is:", self.on_red_count, "\n On red:", self.on_red_flag, "\n")
         # print(colors)
         # print(self.led.value)
@@ -280,51 +271,98 @@ class Ranges:
 
 class Navigation:
     def __init__(self):
-        self.v_max = 0.4
-        self.ang_velocity_max = 0.67
-        self.v = 0.
-        self.ang_velocity = 0.
-        # Tuning constant
-        self.k = .5
-    def angular_velocity(self, theta, stop):
+        # Speed limits
+        self.vel_max = 0.22
+        self.ang_vel_max = 1.60
+        # Current velocity and angular velocity
+        self.vel = 0.
+        self.ang_vel = 0.
+
+        # Tuning Gains
+        self.k_side = 1.3   # Gain for centering in hallways
+        self.k_front = 0.3  # Gain for avoiding front obstacles
+        self.k_stop = 0.8   # Lower gain for turning in place
+
+        # Front threshold
+        self.front_thres = 0.6
+
+        # Randomness added every 10 count
+        self.random_count = 0
+        self.random_stay_random = 2
+        self.random_coeff = 0.
+
+    def angular_velocity(self, avg_dists_slcs:dict, stop):
+        # 1. Handle the "Stop" or "Trapped" case
+        sides_diff = avg_dists_slcs["left"] - avg_dists_slcs["right"]
+        
         if stop:
-            # self.ang_velocity += 0.2
-            self.ang_velocity = max(-self.ang_velocity_max, min(self.ang_velocity, self.ang_velocity_max))
-            return self.ang_velocity
+            print("Stopped\n")
+            # If we are forced to stop, turn in place toward the most open space
+            if np.abs(sides_diff) < 0.375:
+                self.ang_vel = 0.3
+            else:
+                raw_ang_vel =  sides_diff * self.k_stop 
+                self.ang_vel = np.clip(raw_ang_vel, -1., 1.)
+            return self.ang_vel
+        
+        self.random_count += 1
+        # 2. If not stopped we add randomness every 10 count
+        if self.random_count % 10 == 0:
+            print("Randomness on")
+            self.random_coeff = (2*np.random.rand() - 1)*self.ang_vel_max
+            self.random_stay_random = 3
 
-        if(abs(theta) < 0.15):
-          self.ang_velocity = 0.
-        else: 
-            # We clamp the angular velocity since the angle can grow large
-            self.ang_velocity = self.k*theta
-            self.ang_velocity = max(-self.ang_velocity_max, min(self.ang_velocity, self.ang_velocity_max))
-        return self.ang_velocity
+        if self.random_stay_random > 0:
+            self.random_stay_random -= 1
+            return self.random_coeff*self.ang_vel_max
 
-    def velocity(self):
+        
+        # 3. Narrow hallway calculations
+        steering_contribution = sides_diff*self.k_side
+
+        # If object is close infront we increase our turn
+        if avg_dists_slcs["front"] < self.front_thres:
+            front_turning_factor = 1 / (avg_dists_slcs["front"] + 0.05) 
+            steering_contribution += np.sign(sides_diff) * front_turning_factor * self.k_front
+
+        # 4. Deadband
+        if np.abs(steering_contribution) < 0.1:
+            steering_contribution = 0.
+
+        # 5. Clamp to limits
+        self.ang_vel = np.clip(steering_contribution, -self.ang_vel_max, self.ang_vel_max)
+
+        return self.ang_vel
+    
+    def velocity(self, stop):
+        if stop:
+            self.vel = 0.
+            return self.vel
         # v needs to stay in proportion to 1/w
-        self.v = self.v_max / (1 + abs(self.ang_velocity))
-        return self.v
+        # self.vel = self.vel_max / (1 + abs(self.ang_vel))
+
+        self.vel = self.vel_max * (1.0 - (abs(self.ang_vel) / self.ang_vel_max))
+        return max(self.vel, 0.05)
 
 
 class Turtlebot3ObstacleDetection(Node):
 
     def __init__(self):
         super().__init__('turtlebot3_obstacle_detection')
-        # print('TurtleBot3 Obstacle Detection - Auto Move Enabled')
-        # print('----------------------------------------------')
-        # print('stop angle: -90 ~ 90 deg')
-        # print('stop distance: 0.5 m')
-        # print('----------------------------------------------')
 
         self.scan_ranges = Ranges()
         self.has_scan_received = False
 
-        # self.stop_distance = 0.5
         self.nav = Navigation()
+
         self.tele_twist = Twist()
         self.tele_twist.linear.x = 0.2
         self.tele_twist.angular.z = 0.0
-        self.velocities = []
+        # Logging velocities for avg velocity data
+        self.velocities = 0.
+        self.vels_count = 0
+        # Added randomness every 10 count
+        self.random_count = 0
 
         self.debug_counter = 0
 
@@ -365,21 +403,20 @@ class Turtlebot3ObstacleDetection(Node):
 
         self.debug_counter += 1
         if self.debug_counter % 10 == 0:
-            self.scan_ranges.ascii_map()
+            pass
+            # self.scan_ranges.ascii_map()
 
+        avg_dists_slcs = self.scan_ranges.avg_dists_slices()
         move_stop = self.scan_ranges.stop
-        theta = self.scan_ranges.steer_dir()
-        self.tele_twist.angular.z = self.nav.angular_velocity(theta, move_stop)
+        # theta = self.scan_ranges.steer_dir()
+        self.tele_twist.angular.z = self.nav.angular_velocity(avg_dists_slcs, move_stop)
+        self.tele_twist.linear.x = self.nav.velocity(move_stop)
 
-        if move_stop:
-            self.tele_twist.linear.x = 0.
-            # self.tele_twist.angular.z += np.sign(theta)*0.67
-        else:
-            self.tele_twist.linear.x = self.nav.velocity()
-        self.velocities = self.velocities + [self.tele_twist.linear.x]
-        avg_velocity = np.mean(self.velocities)
-        print(f"theta={theta:.2f}, v={self.tele_twist.linear.x:.2f}, w={self.tele_twist.angular.z:.2f}, \
-              collisions={self.scan_ranges.collis:.2f}, avg velocity = {avg_velocity:.2f} ")
+        self.velocities += self.tele_twist.linear.x
+        self.vels_count += 1
+        avg_velocity = self.velocities / self.vels_count
+        print(f"v={self.tele_twist.linear.x:.4f}, w={self.tele_twist.angular.z:.3f}, \
+              collisions={self.scan_ranges.collis:.4f}, avg velocity = {avg_velocity:.4f} ")
 
         # self.tele_twist.linear.x = 0.
         # self.tele_twist.angular.z = 0.
