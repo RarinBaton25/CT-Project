@@ -127,6 +127,7 @@ CHANNEL_IGNORE_DISTANCE = 0.5
 MAX_LINEAR_SPEED = 0.21
 MAX_ANGULAR_SPEED = 1.7
 RATIO_POWER = 1.4
+MAX_TURNING_RATIO_FOR_DEVIATION = 0.9
 
 # together, these make the front hemisphere
 DEG_90  = np.multiply(0.5, np.pi)
@@ -194,6 +195,12 @@ class Turtlebot3ObstacleDetection(Node):
                 return True
         return False
     def set_angular_speed_vs_linear_speed(self, ratio:float, turn_direction=TURN_LEFT):
+        """
+        Assigns angular and linear speed values. They must still be published.
+        The ratio determines the relation between turning and driving forwards.
+        0. is straight ahead, 1. is turning on the spot. Values inbetween are interpolated.
+        A turning direction can be passed, though turning left is assumed.
+        """
         if not 0. <= ratio <= 1.:
             print("Ratio is out of bounds:", ratio)
             ratio = 1.
@@ -214,6 +221,9 @@ class Turtlebot3ObstacleDetection(Node):
         print("Setting angular.z =", self.tele_twist.angular.z)
 
     def distance_to_channel_wall(self, angle):
+        """
+        Calculates the distance to walls defined by 1/sin(angle)
+        """
         if angle == 0.:
             return 100 # something big
         return np.multiply(np.abs(np.divide(1, np.sin(angle))), WALL_DISTANCE)
@@ -233,7 +243,8 @@ class Turtlebot3ObstacleDetection(Node):
 
     def avoid_obstacle(self):
         d = self.closest_obstacle_in_path.get_distance()
-        turn_ratio = np.add(np.multiply(np.divide(1, STOP_DISTANCE - CHANNEL_IGNORE_DISTANCE), np.subtract(d, STOP_DISTANCE)), 1) # lerp
+        turn_ratio = np.add(np.multiply(np.divide(MAX_TURNING_RATIO_FOR_DEVIATION, STOP_DISTANCE - CHANNEL_IGNORE_DISTANCE), \
+                                         np.subtract(d, STOP_DISTANCE)), MAX_TURNING_RATIO_FOR_DEVIATION) # lerp
         print("Turn ratio:", turn_ratio)
         if self.closest_obstacle_in_path.get_angle() < DEG_90:
             # obstacle is to the left
@@ -281,18 +292,18 @@ class Turtlebot3ObstacleDetection(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    turtlebot3_obstacle_detection = Turtlebot3ObstacleDetection()
+    node = Turtlebot3ObstacleDetection()
     try:
         rclpy.spin(turtlebot3_obstacle_detection)
 
     except KeyboardInterrupt:
         print("Stopping navigation.")
-        turtlebot3_obstacle_detection.tele_twist.linear.x = 0.0
-        turtlebot3_obstacle_detection.tele_twist.angular.z = 0.0
-        turtlebot3_obstacle_detection.cmd_vel_pub.publish(turtlebot3_obstacle_detection.tele_twist)
+        node.tele_twist.linear.x = 0.0
+        node.tele_twist.angular.z = 0.0
+        node.cmd_vel_pub.publish(node.tele_twist)
         time.sleep(0.1)
     finally:
-        turtlebot3_obstacle_detection.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
