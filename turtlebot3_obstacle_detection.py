@@ -31,6 +31,47 @@ import time
 # import RPi.GPIO as GPIO
 from gpiozero import LED
 
+# ---------------------------------------------------
+#               LED boilerplate
+# ---------------------------------------------------
+
+# Get I2C bus
+bus = smbus.SMBus(1) # or smbus.SMBus(0)
+
+# ISL29125 address, 0x44(68)
+# Select configuation-1register, 0x01(01)
+# 0x0D(13) Operation: RGB, Range: 360 lux, Res: 16 Bits
+i2c_address = 0x44
+bus.write_byte_data(i2c_address, 0x01, 0x05)
+
+RED_H = 0x0C
+RED_L = 0x0B
+
+GREEN_H = 0x0A
+GREEN_L = 0x09
+
+BLUE_H = 0x0E
+BLUE_L = 0x0D
+
+def getAndUpdateColour():
+    # while True:
+	# Read the data from the sensor
+    data = bus.read_i2c_block_data(i2c_address, 0x09, 6)
+
+    # upshift 
+    red = data[3] << 8 | data[2]
+    green = data[1] << 8 | data[0]
+    blue = data[5] << 8 | data[4]
+
+    red *= 2**(-8)
+    green *= 2**(-8)
+    blue *= 2**(-8)
+
+    colors = [red, green, blue]
+    return colors
+
+# ---------------------------------------------------
+
 LASER_DISTANCE_UPPER = 3.5
 LASER_DISTANCE_LOWER = 0.15
 
@@ -80,7 +121,7 @@ class LaserReading:
 
 TURN_RIGHT = 1
 TURN_LEFT  = 2
-STOP_DISTANCE = 0.23
+STOP_DISTANCE = 0.19
 WALL_DISTANCE = 0.2
 CHANNEL_IGNORE_DISTANCE = 0.5
 MAX_LINEAR_SPEED = 0.21
@@ -107,8 +148,16 @@ class Turtlebot3ObstacleDetection(Node):
 
         self.closest_obstacle_in_path:LaserData = None
 
-        self.led = LED(17)
-        self.led.off()
+        # Navigation LED
+        # self.led = LED(17)
+        # self.led.off()
+
+        # Victim detection
+        self.on_red_count = 0
+        self.on_red_flag = False
+        self.on_red_cooldown = 0
+        self.victim_led = LED(17)
+        self.victim_led.off()
  
         qos = QoSProfile(depth=10)
 
@@ -195,22 +244,35 @@ class Turtlebot3ObstacleDetection(Node):
         else:
             print("Weirdness.")
 
+    def update_victim_led(self, colors:list):
+        if colors[0]/colors[1] >= 1.15:
+            if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
+                self.on_red_count += 1
+                self.on_red_flag = True
+                self.on_red_cooldown = time.time()
+                self.victim_led.on()
+        else:
+            self.on_red_flag = False
+            self.victim_led.off()
+
     def update(self):
         if self.has_scan_received:
             print("----")
             self.find_obstacle_ahead()
+            colors = getAndUpdateColour()
+            self.update_victim_led(colors)
             if self.should_stop():
                 print("Stopping.")
-                self.led.off()
+                # self.navigation_led.off()
                 self.set_angular_speed_vs_linear_speed(1., TURN_LEFT)
             elif self.closest_obstacle_in_path != None:
                 # deviate slightly
                 print("Deviating slightly.")
                 self.avoid_obstacle()
-                self.led.on()
+                # self.navigation_led.on()
             else:
                 # continue forward
-                self.led.off()
+                # self.navigation_led.off()
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
             
