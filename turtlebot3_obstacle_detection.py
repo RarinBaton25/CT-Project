@@ -28,6 +28,7 @@ from gpiozero import LED
 # Led Import
 import smbus
 import time
+import colorsys
 # import RPi.GPIO as GPIO
 from gpiozero import LED
 
@@ -78,6 +79,7 @@ LASER_DISTANCE_LOWER = 0.15
 class LaserData:
     def __init__(self, angle, distance):
         self.angle = angle
+        self.real_distance = distance
 
         if distance < LASER_DISTANCE_LOWER or distance > LASER_DISTANCE_UPPER:
             self.distance = 3.5
@@ -86,6 +88,9 @@ class LaserData:
 
     def get_angle(self):
         return self.angle
+    
+    def get_real_distance(self):
+        return self.real_distance
     
     def get_distance(self):
         return self.distance
@@ -99,9 +104,10 @@ class LaserReading:
     def update_readings(self, msg):
         self.scan_readings = [LaserData(data_index*msg.angle_increment + msg.angle_min, distance) \
                             for data_index, distance in enumerate(msg.ranges)]
+
         # Offsets
         len_readings = len(self.scan_readings)
-        front_offset = len_readings // 4
+        front_offset = len_readings // 5
         front_offset_cone = (len_readings*3) // 40
         front_semi_first = []
         front_semi_second = []
@@ -111,7 +117,7 @@ class LaserReading:
         for i in range(max(front_offset, front_offset_cone)):
             if i < front_offset:
                 front_semi_first.append(self.scan_readings[i])
-                front_semi_second.append(self.scan_readings[3*front_offset + i - 1])
+                front_semi_second.append(self.scan_readings[len_readings - front_offset + i - 1])
             if i < front_offset_cone:
                 front_cone_first.append(self.scan_readings[i])
                 front_cone_second.append(self.scan_readings[len_readings - front_offset_cone + i - 1])
@@ -124,10 +130,12 @@ TURN_LEFT  = 2
 STOP_DISTANCE = 0.19
 WALL_DISTANCE = 0.2
 CHANNEL_IGNORE_DISTANCE = 0.5
-MAX_LINEAR_SPEED = 0.21
-MAX_ANGULAR_SPEED = 1.7
+# Debug = 0 for on, Debug = 1 for off
+DEBUG = 1
+MAX_LINEAR_SPEED = 0.21*DEBUG
+MAX_ANGULAR_SPEED = 1.7*DEBUG
 RATIO_POWER = 1.4
-MAX_TURNING_RATIO_FOR_DEVIATION = 0.9
+MAX_TURNING_RATIO_FOR_DEVIATION = 1.
 
 # together, these make the front hemisphere
 DEG_90  = np.multiply(0.5, np.pi)
@@ -152,14 +160,14 @@ class Turtlebot3ObstacleDetection(Node):
         self.closest_obstacle_in_path:LaserData = None
 
         # Navigation LED
-        # self.led = LED(17)
-        # self.led.off()
+        self.navigation_led = LED(17)
+        self.navigation_led.off()
 
         # Victim detection
         self.victim_count = 0
         self.on_red_flag = False
         self.on_red_cooldown = 0
-        self.victim_led = LED(17)
+        self.victim_led = LED(27)
         self.victim_led.off()
 
         # Average speed variables
@@ -169,6 +177,17 @@ class Turtlebot3ObstacleDetection(Node):
         # Collission variables
         self.collission_count = 0
  
+        # Data for collisions
+        self.branches = None
+        self.branches_avg = None
+        self.branches_count = 0
+
+        # Led stats
+        self.h_sum = 0.
+        self.s_sum = 0.
+        self.v_sum = 0.
+        self.led_count = 0
+
         qos = QoSProfile(depth=10)
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
@@ -274,7 +293,24 @@ class Turtlebot3ObstacleDetection(Node):
             print("Weirdness.")
 
     def update_victim_led(self, colors:list):
-        if colors[0]/colors[1] >= 1.15:
+        # 1. Normalize RGB
+        r, g, b = [c / 255.0 for c in colors]
+
+        # 2. Convert to HSV
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+
+        # 3. Logic for detecting red, value bounds tuned by averaging hue, saturation and value
+        #    by sampling dataS
+        self.led_count += 1
+        self.h_sum += h
+        self.s_sum += s
+        self.v_sum += v
+        # Code for sampling red data
+        # print("\n", h, s, v, "\n")
+        # print("\n h_avg =", self.h_sum/self.led_count, "s_avg =", self.s_sum / self.led_count, "v_avg =", self.v_sum / self.led_count)
+
+        is_red = (0.10 < h < 0.16) and (s > 0.47) and v > 0.105
+        if is_red:
             if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
                 self.victim_count += 1
                 self.on_red_flag = True
@@ -295,16 +331,16 @@ class Turtlebot3ObstacleDetection(Node):
             self.update_victim_led(colors)
             if self.should_stop():
                 print("Stopping.")
-                # self.navigation_led.off()
+                self.navigation_led.off()
                 self.set_angular_speed_vs_linear_speed(1., TURN_LEFT)
             elif self.closest_obstacle_in_path != None:
                 # deviate slightly
                 print("Deviating slightly.")
                 self.avoid_obstacle()
-                # self.navigation_led.on()
+                self.navigation_led.on()
             else:
                 # continue forward
-                # self.navigation_led.off()
+                self.navigation_led.off()
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
 
@@ -322,6 +358,16 @@ class Turtlebot3ObstacleDetection(Node):
             # Collissions
             print("Collissions detected:", self.collission_count)
             self.cmd_vel_pub.publish(self.tele_twist)
+
+            # Prints for collisions tuning
+            # self.branches_count += 1
+            # if type(self.branches) == type(None):
+            #     self.branches = np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
+            #     self.branches_avg = self.branches
+            # else:
+            #     self.branches += np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
+            #     self.branches_avg = self.branches / self.branches_count
+            # print("Average for each branch at time t =", self.branches_count, "is \n branches =", self.branches_avg, "\n")
 
 
 def main(args=None):
