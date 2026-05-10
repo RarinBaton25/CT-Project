@@ -173,26 +173,14 @@ class Turtlebot3ObstacleDetection(Node):
         self.speed_sum = 0.
         self.speed_sample_count = 0
 
-        # Collission variables
-        self.collission_count = 0
- 
-        # Data for collisions
-        self.branches = None
-        self.branches_avg = None
-        self.branches_count = 0
-
-        # Led stats
-        self.h_sum = 0.
-        self.s_sum = 0.
-        self.v_sum = 0.
-        self.led_count = 0
-
-        # Collis test
+        # Collisions variables
         self.imu_data = Imu()
         self.prev_x = 0.0
         self.prev_y = 0.0
-        self.threshold = 0.5
-
+        self.threshold = 10.
+        self.collission_count = 0
+        self.collision_cd = 0.
+ 
         qos = QoSProfile(depth=10)
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
@@ -306,14 +294,6 @@ class Turtlebot3ObstacleDetection(Node):
 
         # 3. Logic for detecting red, value bounds tuned by averaging hue, saturation and value
         #    by sampling dataS
-        self.led_count += 1
-        self.h_sum += h
-        self.s_sum += s
-        self.v_sum += v
-        # Code for sampling red data
-        # print("\n", h, s, v, "\n")
-        # print("\n h_avg =", self.h_sum/self.led_count, "s_avg =", self.s_sum / self.led_count, "v_avg =", self.v_sum / self.led_count)
-
         is_red = (0.10 < h < 0.16) and (s > 0.47) and v > 0.105
         if is_red:
             if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
@@ -324,27 +304,29 @@ class Turtlebot3ObstacleDetection(Node):
         else:
             self.on_red_flag = False
             self.victim_led.off()
-
-    def collission_detected(self):
-        return False
     
     def detect_collision(self):
         """
         Takes an IMU message and returns True if a spike is detected.
         """
+        # Early out for collision cooldown
+        if time.time() < self.collision_cd:
+            return False
+        
         curr_x = self.imu_data.linear_acceleration.x
         curr_y = self.imu_data.linear_acceleration.y
 
         # Calculate the 'jerk' (change in acceleration)
         delta_x = abs(curr_x - self.prev_x)
         delta_y = abs(curr_y - self.prev_y)
-        print("d_x =", delta_x, "d_y =", delta_y, "\n")
+        
         # Update previous values for the next check
         self.prev_x = curr_x
         self.prev_y = curr_y
 
         # If either axis spikes, we hit something
         if delta_x > self.threshold or delta_y > self.threshold:
+            self.collision_cd = time.time() + 3
             return True
         
         return False
@@ -369,9 +351,6 @@ class Turtlebot3ObstacleDetection(Node):
                 self.navigation_led.off()
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
-
-            if self.collission_detected():
-                self.collission_count += 1
             
             # Victims
             print("Victims found:", self.victim_count)
@@ -387,16 +366,6 @@ class Turtlebot3ObstacleDetection(Node):
 
             print("Collissions detected:", self.collission_count)
             self.cmd_vel_pub.publish(self.tele_twist)
-
-            # Prints for collisions tuning
-            # self.branches_count += 1
-            # if type(self.branches) == type(None):
-            #     self.branches = np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
-            #     self.branches_avg = self.branches
-            # else:
-            #     self.branches += np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
-            #     self.branches_avg = self.branches / self.branches_count
-            # print("Average for each branch at time t =", self.branches_count, "is \n branches =", self.branches_avg, "\n")
 
 
 def main(args=None):
