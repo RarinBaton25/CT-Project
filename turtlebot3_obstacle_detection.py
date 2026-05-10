@@ -28,6 +28,7 @@ from gpiozero import LED
 # Led Import
 import smbus
 import time
+import colorsys
 # import RPi.GPIO as GPIO
 from gpiozero import LED
 
@@ -78,6 +79,7 @@ LASER_DISTANCE_LOWER = 0.15
 class LaserData:
     def __init__(self, angle, distance):
         self.angle = angle
+        self.real_distance = distance
 
         if distance < LASER_DISTANCE_LOWER or distance > LASER_DISTANCE_UPPER:
             self.distance = 3.5
@@ -86,6 +88,9 @@ class LaserData:
 
     def get_angle(self):
         return self.angle
+    
+    def get_real_distance(self):
+        return self.real_distance
     
     def get_distance(self):
         return self.distance
@@ -99,6 +104,7 @@ class LaserReading:
     def update_readings(self, msg):
         self.scan_readings = [LaserData(data_index*msg.angle_increment + msg.angle_min, distance) \
                             for data_index, distance in enumerate(msg.ranges)]
+
         # Offsets
         len_readings = len(self.scan_readings)
         front_offset = len_readings // 5
@@ -124,8 +130,10 @@ TURN_LEFT  = 2
 STOP_DISTANCE = 0.19
 WALL_DISTANCE = 0.2
 CHANNEL_IGNORE_DISTANCE = 0.5
-MAX_LINEAR_SPEED = 0.21
-MAX_ANGULAR_SPEED = 1.7
+# Debug = 0 for on, Debug = 1 for off
+DEBUG = 1
+MAX_LINEAR_SPEED = 0.21*DEBUG
+MAX_ANGULAR_SPEED = 1.7*DEBUG
 RATIO_POWER = 1.4
 MAX_TURNING_RATIO_FOR_DEVIATION = 1.
 
@@ -167,6 +175,17 @@ class Turtlebot3ObstacleDetection(Node):
         # Collission variables
         self.collission_count = 0
  
+        # Data for collisions
+        self.branches = None
+        self.branches_avg = None
+        self.branches_count = 0
+
+        # Led stats
+        self.h_sum = 0.
+        self.s_sum = 0.
+        self.v_sum = 0.
+        self.led_count = 0
+
         qos = QoSProfile(depth=10)
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
@@ -263,7 +282,26 @@ class Turtlebot3ObstacleDetection(Node):
             print("Weirdness.")
 
     def update_victim_led(self, colors:list):
-        if colors[0]/colors[1] >= 1.15:
+        # 1. Normalize RGB (assuming sensor gives 0-255)
+        # If your sensor gives different ranges, adjust the divisor
+        r, g, b = [c / 255.0 for c in colors]
+
+        # 2. Convert to HSV
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+
+        # 3. Define "Red" logic
+        # Hue: Red is < 10 degrees (0.02) or > 350 degrees (0.97)
+        # Saturation: Must be > 50% (0.5) to avoid being "washed out"
+        # Value: Must be > 20% (0.2) to avoid being "too dark"
+        self.led_count += 1
+        self.h_sum += h
+        self.s_sum += s
+        self.v_sum += v
+        # print("\n", h, s, v, "\n")
+        print("\n h_avg =", self.h_sum/self.led_count, "s_avg =", self.s_sum / self.led_count, "v_avg =", self.v_sum / self.led_count)
+
+        is_red = (0.10 < h < 0.16) and (s > 0.47) and v > 0.105
+        if is_red:
             if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
                 self.victim_count += 1
                 self.on_red_flag = True
@@ -311,6 +349,16 @@ class Turtlebot3ObstacleDetection(Node):
             # Collissions
             print("Collissions detected:", self.collission_count)
             self.cmd_vel_pub.publish(self.tele_twist)
+
+            # Prints for collisions tuning
+            # self.branches_count += 1
+            # if type(self.branches) == type(None):
+            #     self.branches = np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
+            #     self.branches_avg = self.branches
+            # else:
+            #     self.branches += np.array([data.get_real_distance() for data in self.scan_ranges.scan_readings])
+            #     self.branches_avg = self.branches / self.branches_count
+            # print("Average for each branch at time t =", self.branches_count, "is \n branches =", self.branches_avg, "\n")
 
 
 def main(args=None):
