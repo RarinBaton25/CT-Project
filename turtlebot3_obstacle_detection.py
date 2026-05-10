@@ -294,7 +294,7 @@ def main(args=None):
     rclpy.init(args=args)
     node = Turtlebot3ObstacleDetection()
     try:
-        rclpy.spin(turtlebot3_obstacle_detection)
+        rclpy.spin(node)
 
     except KeyboardInterrupt:
         print("Stopping navigation.")
