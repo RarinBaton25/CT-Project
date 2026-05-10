@@ -22,7 +22,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.qos import QoSProfile
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import LaserScan, Imu
 import RPi.GPIO as GPIO
 from gpiozero import LED
 # Led Import
@@ -151,6 +151,8 @@ class Turtlebot3ObstacleDetection(Node):
         self.scan_ranges = LaserReading()
         self.has_scan_received = False
 
+        self.imu = Imu()
+
         self.tele_twist = Twist()
         self.tele_twist.linear.x = 0.0
         self.tele_twist.angular.z = 0.0
@@ -207,6 +209,12 @@ class Turtlebot3ObstacleDetection(Node):
             self.cmd_vel_raw_callback,
             qos_profile=qos_profile_sensor_data)
 
+        self.imu_sub = self.create_subscription(
+            Imu,
+            'imu',
+            self.imu_callback,
+            qos_profile=qos_profile_sensor_data)
+
         self.timer = self.create_timer(0.05, self.timer_callback)
 
     # Writes data from scan
@@ -219,6 +227,9 @@ class Turtlebot3ObstacleDetection(Node):
 
     def timer_callback(self):
         self.update()
+
+    def imu_callback(self, msg):
+        self.imu_data = msg
 
     def should_stop(self):
         for data in self.scan_ranges.front_cone:
