@@ -186,6 +186,11 @@ class Turtlebot3ObstacleDetection(Node):
         self.v_sum = 0.
         self.led_count = 0
 
+        # Collis test
+        self.prev_x = 0.0
+        self.prev_y = 0.0
+        self.threshold = 0.5
+
         qos = QoSProfile(depth=10)
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', qos)
@@ -311,6 +316,27 @@ class Turtlebot3ObstacleDetection(Node):
 
     def collission_detected(self):
         return False
+    
+    def detect_collision(self, msg):
+        """
+        Takes an IMU message and returns True if a spike is detected.
+        """
+        curr_x = msg.linear_acceleration.x
+        curr_y = msg.linear_acceleration.y
+
+        # Calculate the 'jerk' (change in acceleration)
+        delta_x = abs(curr_x - self.prev_x)
+        delta_y = abs(curr_y - self.prev_y)
+        print("d_x =", delta_x, "d_y =", delta_y, "\n")
+        # Update previous values for the next check
+        self.prev_x = curr_x
+        self.prev_y = curr_y
+
+        # If either axis spikes, we hit something
+        if delta_x > self.threshold or delta_y > self.threshold:
+            return True
+        
+        return False
 
     def update(self):
         if self.has_scan_received:
@@ -345,6 +371,9 @@ class Turtlebot3ObstacleDetection(Node):
             print("Average speed:", np.divide(self.speed_sum, self.speed_sample_count))
             
             # Collissions
+            if self.detect_collision():
+                self.collission_count += 1
+
             print("Collissions detected:", self.collission_count)
             self.cmd_vel_pub.publish(self.tele_twist)
 
