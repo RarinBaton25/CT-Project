@@ -101,7 +101,7 @@ class LaserReading:
                             for data_index, distance in enumerate(msg.ranges)]
         # Offsets
         len_readings = len(self.scan_readings)
-        front_offset = len_readings // 4
+        front_offset = len_readings // 5
         front_offset_cone = (len_readings*3) // 40
         front_semi_first = []
         front_semi_second = []
@@ -111,7 +111,7 @@ class LaserReading:
         for i in range(max(front_offset, front_offset_cone)):
             if i < front_offset:
                 front_semi_first.append(self.scan_readings[i])
-                front_semi_second.append(self.scan_readings[3*front_offset + i - 1])
+                front_semi_second.append(self.scan_readings[len_readings - front_offset + i - 1])
             if i < front_offset_cone:
                 front_cone_first.append(self.scan_readings[i])
                 front_cone_second.append(self.scan_readings[len_readings - front_offset_cone + i - 1])
@@ -127,7 +127,7 @@ CHANNEL_IGNORE_DISTANCE = 0.5
 MAX_LINEAR_SPEED = 0.21
 MAX_ANGULAR_SPEED = 1.7
 RATIO_POWER = 1.4
-MAX_TURNING_RATIO_FOR_DEVIATION = 0.9
+MAX_TURNING_RATIO_FOR_DEVIATION = 1.
 
 # together, these make the front hemisphere
 DEG_90  = np.multiply(0.5, np.pi)
