@@ -151,7 +151,6 @@ class Turtlebot3ObstacleDetection(Node):
         self.scan_ranges = LaserReading()
         self.has_scan_received = False
 
-        self.imu = Imu()
 
         self.tele_twist = Twist()
         self.tele_twist.linear.x = 0.0
@@ -189,6 +188,7 @@ class Turtlebot3ObstacleDetection(Node):
         self.led_count = 0
 
         # Collis test
+        self.imu_data = Imu()
         self.prev_x = 0.0
         self.prev_y = 0.0
         self.threshold = 0.5
@@ -328,12 +328,12 @@ class Turtlebot3ObstacleDetection(Node):
     def collission_detected(self):
         return False
     
-    def detect_collision(self, msg):
+    def detect_collision(self):
         """
         Takes an IMU message and returns True if a spike is detected.
         """
-        curr_x = msg.linear_acceleration.x
-        curr_y = msg.linear_acceleration.y
+        curr_x = self.imu_data.linear_acceleration.x
+        curr_y = self.imu_data.linear_acceleration.y
 
         # Calculate the 'jerk' (change in acceleration)
         delta_x = abs(curr_x - self.prev_x)
