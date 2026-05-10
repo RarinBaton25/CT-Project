@@ -154,11 +154,18 @@ class Turtlebot3ObstacleDetection(Node):
         # self.led.off()
 
         # Victim detection
-        self.on_red_count = 0
+        self.victim_count = 0
         self.on_red_flag = False
         self.on_red_cooldown = 0
         self.victim_led = LED(17)
         self.victim_led.off()
+
+        # Average speed variables
+        self.speed_sum = 0.
+        self.speed_sample_count = 0
+
+        # Collission variables
+        self.collission_count = 0
  
         qos = QoSProfile(depth=10)
 
@@ -258,13 +265,16 @@ class Turtlebot3ObstacleDetection(Node):
     def update_victim_led(self, colors:list):
         if colors[0]/colors[1] >= 1.15:
             if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
-                self.on_red_count += 1
+                self.victim_count += 1
                 self.on_red_flag = True
                 self.on_red_cooldown = time.time()
                 self.victim_led.on()
         else:
             self.on_red_flag = False
             self.victim_led.off()
+
+    def collission_detected(self):
+        return False
 
     def update(self):
         if self.has_scan_received:
@@ -286,7 +296,20 @@ class Turtlebot3ObstacleDetection(Node):
                 # self.navigation_led.off()
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
+
+            if self.collission_detected():
+                self.collission_count += 1
             
+            # Victims
+            print("Victims found:", self.victim_count)
+            
+            # Average Speed
+            self.speed_sample_count += 1
+            self.speed_sum += self.tele_twist.linear.x
+            print("Average speed:", np.divide(self.speed_sum, self.speed_sample_count))
+            
+            # Collissions
+            print("Collissions detected:", self.collission_count)
             self.cmd_vel_pub.publish(self.tele_twist)
 
 
