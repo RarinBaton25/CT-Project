@@ -158,14 +158,14 @@ class Turtlebot3ObstacleDetection(Node):
         self.closest_obstacle_in_path:LaserData = None
 
         # Navigation LED
-        # self.led = LED(17)
-        # self.led.off()
+        self.navigation_led = LED(17)
+        self.navigation_led.off()
 
         # Victim detection
         self.victim_count = 0
         self.on_red_flag = False
         self.on_red_cooldown = 0
-        self.victim_led = LED(17)
+        self.victim_led = LED(27)
         self.victim_led.off()
 
         # Average speed variables
@@ -282,23 +282,21 @@ class Turtlebot3ObstacleDetection(Node):
             print("Weirdness.")
 
     def update_victim_led(self, colors:list):
-        # 1. Normalize RGB (assuming sensor gives 0-255)
-        # If your sensor gives different ranges, adjust the divisor
+        # 1. Normalize RGB
         r, g, b = [c / 255.0 for c in colors]
 
         # 2. Convert to HSV
         h, s, v = colorsys.rgb_to_hsv(r, g, b)
 
-        # 3. Define "Red" logic
-        # Hue: Red is < 10 degrees (0.02) or > 350 degrees (0.97)
-        # Saturation: Must be > 50% (0.5) to avoid being "washed out"
-        # Value: Must be > 20% (0.2) to avoid being "too dark"
+        # 3. Logic for detecting red, value bounds tuned by averaging hue, saturation and value
+        #    by sampling dataS
         self.led_count += 1
         self.h_sum += h
         self.s_sum += s
         self.v_sum += v
+        # Code for sampling red data
         # print("\n", h, s, v, "\n")
-        print("\n h_avg =", self.h_sum/self.led_count, "s_avg =", self.s_sum / self.led_count, "v_avg =", self.v_sum / self.led_count)
+        # print("\n h_avg =", self.h_sum/self.led_count, "s_avg =", self.s_sum / self.led_count, "v_avg =", self.v_sum / self.led_count)
 
         is_red = (0.10 < h < 0.16) and (s > 0.47) and v > 0.105
         if is_red:
@@ -322,16 +320,16 @@ class Turtlebot3ObstacleDetection(Node):
             self.update_victim_led(colors)
             if self.should_stop():
                 print("Stopping.")
-                # self.navigation_led.off()
+                self.navigation_led.off()
                 self.set_angular_speed_vs_linear_speed(1., TURN_LEFT)
             elif self.closest_obstacle_in_path != None:
                 # deviate slightly
                 print("Deviating slightly.")
                 self.avoid_obstacle()
-                # self.navigation_led.on()
+                self.navigation_led.on()
             else:
                 # continue forward
-                # self.navigation_led.off()
+                self.navigation_led.off()
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
 
