@@ -117,10 +117,10 @@ class LaserReading:
         for i in range(max(front_offset, front_offset_cone)):
             if i < front_offset:
                 front_semi_first.append(self.scan_readings[i])
-                front_semi_second.append(self.scan_readings[len_readings - front_offset + i - 1])
+                front_semi_second.append(self.scan_readings[len_readings - front_offset + i])
             if i < front_offset_cone:
                 front_cone_first.append(self.scan_readings[i])
-                front_cone_second.append(self.scan_readings[len_readings - front_offset_cone + i - 1])
+                front_cone_second.append(self.scan_readings[len_readings - front_offset_cone + i])
 
         self.front_semicircle = front_semi_first + front_semi_second
         self.front_cone = front_cone_first + front_cone_second
@@ -289,11 +289,11 @@ class Turtlebot3ObstacleDetection(Node):
         # 1. Normalize RGB
         r, g, b = [c / 255.0 for c in colors]
 
-        # 2. Convert to HSV
+        # 1. Convert to HSV
         h, s, v = colorsys.rgb_to_hsv(r, g, b)
 
         # 3. Logic for detecting red, value bounds tuned by averaging hue, saturation and value
-        #    by sampling dataS
+        #    by sampling data
         is_red = (0.10 < h < 0.16) and (s > 0.47) and v > 0.105
         if is_red:
             if not self.on_red_flag and self.on_red_cooldown + 3 <= time.time():
@@ -352,6 +352,7 @@ class Turtlebot3ObstacleDetection(Node):
                 print("Continuing.")
                 self.set_angular_speed_vs_linear_speed(0.)
             
+
             # Victims
             print("Victims found:", self.victim_count)
             
